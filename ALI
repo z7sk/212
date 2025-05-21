@@ -1,0 +1,100 @@
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes, ConversationHandler
+import math, cmath, numpy as np
+
+# الحالات
+CHOOSE_METHOD, QUAD_A, QUAD_B, QUAD_C, MATRIX_INPUT = range(5)
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("📐 قانون الدستور", callback_data='formula')],
+        [InlineKeyboardButton("📊 حل المعادلات بالمصفوفة", callback_data='matrix')],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("اختر طريقة الحل:", reply_markup=reply_markup)
+    return CHOOSE_METHOD
+
+async def choose_method(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.data == 'formula':
+        await query.message.reply_text("أرسل قيمة a:")
+        return QUAD_A
+    elif query.data == 'matrix':
+        await query.message.reply_text("أرسل المعاملات بالشكل:\na1 b1 c1 r1\na2 b2 c2 r2\na3 b3 c3 r3\n(يدعم الأعداد المركبة مثل 2+3i)")
+        return MATRIX_INPUT
+
+# ==== قانون الدستور ====
+async def get_a(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['a'] = complex(update.message.text.replace('i', 'j'))
+    await update.message.reply_text("أرسل قيمة b:")
+    return QUAD_B
+
+async def get_b(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['b'] = complex(update.message.text.replace('i', 'j'))
+    await update.message.reply_text("أرسل قيمة c:")
+    return QUAD_C
+
+async def get_c(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    a = context.user_data['a']
+    b = context.user_data['b']
+    c = complex(update.message.text.replace('i', 'j'))
+
+    delta = b**2 - 4*a*c
+    sqrt_delta = cmath.sqrt(delta)
+    x1 = (-b + sqrt_delta) / (2*a)
+    x2 = (-b - sqrt_delta) / (2*a)
+
+    result = f"🔍 الحلول:\nx₁ = {x1}\nx₂ = {x2}"
+    await update.message.reply_text(result)
+    return ConversationHandler.END
+
+# ==== حل المصفوفة ====
+async def get_matrix(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        lines = update.message.text.strip().split('\n')
+        A = []
+        B = []
+        for line in lines:
+            parts = line.strip().replace('i', 'j').split()
+            A.append([complex(parts[0]), complex(parts[1]), complex(parts[2])])
+            B.append(complex(parts[3]))
+        A = np.array(A, dtype=complex)
+        B = np.array(B, dtype=complex)
+
+        result = np.linalg.solve(A, B)
+        reply = f"✅ الحلول:\n"
+        for i, val in enumerate(result):
+            reply += f"x{i+1} = {val}\n"
+        await update.message.reply_text(reply)
+    except Exception as e:
+        await update.message.reply_text(f"حدث خطأ في المعطيات. تأكد من التنسيق الصحيح.\n{e}")
+    return ConversationHandler.END
+
+# إلغاء
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("❌ تم إلغاء العملية.")
+    return ConversationHandler.END
+
+def main():
+    TOKEN = "8119541776:AAFqF3txl0zLDXqaGtRy68YQxzKJRsFN_rw"
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('start', start)],
+        states={
+            CHOOSE_METHOD: [CallbackQueryHandler(choose_method)],
+            QUAD_A: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_a)],
+            QUAD_B: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_b)],
+            QUAD_C: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_c)],
+            MATRIX_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_matrix)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel)],
+    )
+
+    app.add_handler(conv_handler)
+    print("🤖 Bot is running...")
+    app.run_polling()
+
+if __name__ == '__main__':
+    main()
